@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import { api } from './api.js';
+import AuthPage from './AuthPage.jsx';
 
 const hue = (s) => [...s].reduce((a, c) => a + c.charCodeAt(0), 0) % 360;
 const Poster = ({ t }) => (
@@ -146,25 +147,6 @@ function History({ token, open, go }) {
   );
 }
 
-function Auth({ onAuth }) {
-  const [mode, setMode] = useState('login'), [email, setEmail] = useState(''), [password, setPassword] = useState(''), [err, setErr] = useState('');
-  const submit = async () => {
-    try { onAuth(await api(`/auth/${mode}`, { method: 'POST', body: { email, password } })); } catch (e) { setErr(e.message); }
-  };
-  return (
-    <div className="auth">
-      <h2>{mode === 'login' ? 'Log in' : 'Create your account'}</h2>
-      <label>Email<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></label>
-      <label>Password<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} /></label>
-      {err && <p className="error">{err}</p>}
-      <button className="btn" onClick={submit}>{mode === 'login' ? 'Log in' : 'Create account'}</button>
-      <button className="link" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setErr(''); }}>
-        {mode === 'login' ? 'New here? Create an account' : 'Have an account? Log in'}
-      </button>
-    </div>
-  );
-}
-
 export default function App() {
   const [token, setToken] = useState(localStorage.token || '');
   const [user, setUser] = useState(JSON.parse(localStorage.user || 'null'));
@@ -193,7 +175,7 @@ export default function App() {
         {view.name === 'title' && <Detail id={view.id} token={token} go={go} />}
         {view.name === 'plans' && <Plans token={token} go={go} notify={notify} />}
         {view.name === 'history' && <History token={token} go={go} open={(id) => go('title', id)} />}
-        {view.name === 'auth' && <Auth onAuth={onAuth} />}
+        {view.name === 'auth' && <AuthPage onAuth={onAuth} />}
       </main>
       {toast && <div className="toast" role="status">{toast}</div>}
     </>
