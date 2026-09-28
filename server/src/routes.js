@@ -18,6 +18,10 @@ const planOf = async (uid) => {
 };
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+const titleFields = (body) => Object.fromEntries(
+  ['name', 'type', 'genres', 'cast', 'description', 'releaseYear', 'posterUrl', 'streamUrl', 'minPlan']
+    .filter((key) => Object.hasOwn(body, key)).map((key) => [key, body[key]]),
+);
 const r = Router();
 
 // ---- auth ----
@@ -65,13 +69,17 @@ r.get('/titles/:id/stream', authed, wrap(async (req, res) => {
   if (!t) return res.status(404).json({ error: 'Title not found' });
   if (RANK[await planOf(req.user.id)] < RANK[t.minPlan])
     return res.status(403).json({ error: `This title needs the ${t.minPlan} plan`, needPlan: t.minPlan });
+  if (!t.streamUrl) return res.status(404).json({ error: 'No video is available for this title yet' });
   const w = await Watch.findOne({ userId: req.user.id, titleId: t.id });
   res.json({ url: t.streamUrl, resume: w?.progressSeconds || 0 });
 }));
 
-r.post('/titles', authed, admin, wrap(async (req, res) => res.status(201).json(await Title.create(req.body))));
+r.post('/titles', authed, admin, wrap(async (req, res) => res.status(201).json(await Title.create(titleFields(req.body)))));
 r.put('/titles/:id', authed, admin, wrap(async (req, res) =>
-  res.json(await Title.findByIdAndUpdate(req.params.id, req.body, { new: true }))));
+  {
+    const title = await Title.findByIdAndUpdate(req.params.id, { $set: titleFields(req.body) }, { new: true, runValidators: true });
+    return title ? res.json(title) : res.status(404).json({ error: 'Title not found' });
+  }));
 
 // ---- subscriptions ----
 r.get('/subscription', authed, wrap(async (req, res) => res.json({ plan: await planOf(req.user.id) })));
@@ -97,3 +105,4 @@ r.put('/watch/:titleId', authed, wrap(async (req, res) => {
 }));
 
 export default r;
+

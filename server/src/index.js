@@ -19,6 +19,7 @@ app.get('/health', (_req, res) => {
 });
 app.use('/api', routes);
 app.use((e, _req, res, _next) => {
+  if (e.name === 'ValidationError') return res.status(400).json({ error: Object.values(e.errors).map((error) => error.message).join('; ') });
   if (e.name === 'CastError') return res.status(404).json({ error: 'Not found' });
   console.error(e);
   res.status(500).json({ error: 'Something went wrong' });
@@ -33,3 +34,4 @@ process.on('SIGTERM', () => {
   server.close(async () => { await mongoose.disconnect(); process.exit(0); });
   setTimeout(() => process.exit(1), 25000).unref();
 });
+

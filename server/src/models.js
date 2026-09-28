@@ -7,15 +7,20 @@ export const User = model('User', new Schema({
   role: { type: String, enum: ['user', 'admin'], default: 'user' },
 }, { timestamps: true }));
 
+const validUrl = (value) => {
+  if (!value) return true;
+  try { return ['http:', 'https:'].includes(new URL(value).protocol); } catch { return false; }
+};
+
 const titleSchema = new Schema({
-  name: { type: String, required: true },
+  name: { type: String, required: true, trim: true, maxlength: 200 },
   type: { type: String, enum: ['movie', 'series'], default: 'movie' },
   genres: [String],
   cast: [String],
-  description: String,
-  releaseYear: Number,
-  posterUrl: String,
-  streamUrl: String, // later: S3 path -> signed CloudFront URL
+  description: { type: String, maxlength: 5000 },
+  releaseYear: { type: Number, min: 1888, max: 2100, validate: { validator: (v) => v == null || Number.isInteger(v), message: 'Release year must be a whole number' } },
+  posterUrl: { type: String, trim: true, validate: { validator: validUrl, message: 'Poster URL must use http or https' } },
+  streamUrl: { type: String, trim: true, validate: { validator: validUrl, message: 'Stream URL must use http or https' } }, // later: S3 path -> signed CloudFront URL
   minPlan: { type: String, enum: ['free', 'basic', 'premium'], default: 'free' },
 }, { timestamps: true });
 titleSchema.index({ genres: 1 });
@@ -37,3 +42,4 @@ const watchSchema = new Schema({
 }, { timestamps: true });
 watchSchema.index({ userId: 1, titleId: 1 }, { unique: true });
 export const Watch = model('Watch', watchSchema);
+
