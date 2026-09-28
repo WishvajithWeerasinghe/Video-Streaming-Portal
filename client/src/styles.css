@@ -114,3 +114,9 @@ main { max-width:1180px; margin:0 auto; padding:32px clamp(16px,4vw,48px) 64px; 
   .auth-backdrop { height: 200px; }
   .auth-tiles { grid-template-columns: repeat(5, 1fr); }
 }
+.add-title { max-width: 680px; margin: 0 auto; }
+.add-title fieldset { border: 0; padding: 0; display: grid; gap: 16px; min-width: 0; }
+.add-title input, .add-title select, .add-title textarea { width: 100%; padding: 12px 14px; font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+.add-title textarea { resize: vertical; }
+.add-title .btn { justify-self: start; }
+.card .poster { width: 100%; }

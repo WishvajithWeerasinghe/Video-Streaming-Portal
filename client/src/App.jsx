@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import { api } from './api.js';
 import AuthPage from './AuthPage.jsx';
+import AddTitle from './AddTitle.jsx';
 
 const hue = (s) => [...s].reduce((a, c) => a + c.charCodeAt(0), 0) % 360;
 const Poster = ({ t }) => (
@@ -19,16 +20,19 @@ const PLANS = [
 function Browse({ open }) {
   const [q, setQ] = useState(''), [genre, setGenre] = useState(''), [page, setPage] = useState(1);
   const [genres, setGenres] = useState([]), [data, setData] = useState({ items: [], pages: 1, total: 0 });
+  const [loading, setLoading] = useState(true), [error, setError] = useState(''), [retry, setRetry] = useState(0);
   useEffect(() => { api('/titles/meta/genres').then(setGenres).catch(() => {}); }, []);
   useEffect(() => {
+    let active = true;
+    setLoading(true); setError('');
     const id = setTimeout(() => {
       const p = new URLSearchParams({ page });
       if (q) p.set('q', q);
       if (genre) p.set('genre', genre);
-      api('/titles?' + p).then(setData).catch(() => {});
+      api('/titles?' + p).then((result) => { if (active) setData(result); }).catch((e) => { if (active) setError(e.message); }).finally(() => { if (active) setLoading(false); });
     }, 250);
-    return () => clearTimeout(id);
-  }, [q, genre, page]);
+    return () => { active = false; clearTimeout(id); };
+  }, [q, genre, page, retry]);
   return (
     <>
       <section className="hero">
@@ -41,7 +45,7 @@ function Browse({ open }) {
           ))}
         </div>
       </section>
-      {data.items.length === 0 ? <p className="empty">No titles match. Try a different word or clear the genre filter.</p> : (
+      {loading ? <p className="empty" role="status">Loading titles…</p> : error ? <div role="alert"><p className="error">Could not load titles: {error}</p><button className="btn" onClick={() => setRetry(retry + 1)}>Try again</button></div> : data.items.length === 0 ? <p className="empty">{q || genre ? 'No titles match. Try a different word or clear the genre filter.' : 'No titles yet. Add a title using an admin account or load the sample catalogue.'}</p> : (
         <div className="grid">
           {data.items.map((t) => (
             <button key={t._id} className="card" onClick={() => open(t._id)}>
@@ -52,7 +56,7 @@ function Browse({ open }) {
           ))}
         </div>
       )}
-      {data.pages > 1 && (
+      {!loading && !error && data.pages > 1 && (
         <div className="pager">
           <button disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</button>
           <span>Page {data.page} of {data.pages}</span>
@@ -167,6 +171,7 @@ export default function App() {
           <button onClick={() => go('browse')}>Browse</button>
           <button onClick={() => go('history')}>Continue watching</button>
           <button onClick={() => go('plans')}>Plans</button>
+          {user?.role === 'admin' && <button onClick={() => go('add-title')}>Add title</button>}
           {user ? <button onClick={logout}>Log out ({user.email})</button> : <button className="btn sm" onClick={() => go('auth')}>Log in</button>}
         </nav>
       </header>
@@ -175,9 +180,11 @@ export default function App() {
         {view.name === 'title' && <Detail id={view.id} token={token} go={go} />}
         {view.name === 'plans' && <Plans token={token} go={go} notify={notify} />}
         {view.name === 'history' && <History token={token} go={go} open={(id) => go('title', id)} />}
+        {view.name === 'add-title' && user?.role === 'admin' && <AddTitle token={token} onSaved={(t) => { go('title', t._id); notify('Title saved to the catalogue'); }} />}
         {view.name === 'auth' && <AuthPage onAuth={onAuth} />}
       </main>
       {toast && <div className="toast" role="status">{toast}</div>}
     </>
   );
 }
+
