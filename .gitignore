@@ -1,3 +1,5 @@
 node_modules
 .env
 dist
+client/public/videos/
+client/public/posters/
