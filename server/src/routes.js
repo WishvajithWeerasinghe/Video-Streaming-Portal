@@ -45,14 +45,17 @@ r.post('/auth/login', wrap(async (req, res) => {
 r.get('/titles/meta/genres', wrap(async (_req, res) => res.json((await Title.distinct('genres')).sort())));
 
 r.get('/titles', wrap(async (req, res) => {
-  const { q, genre, year } = req.query;
+  const { q, genre, year, sort } = req.query;
   const page = Math.max(1, +req.query.page || 1), limit = 12;
   const f = {};
   if (q) { const rx = new RegExp(esc(String(q)), 'i'); f.$or = [{ name: rx }, { cast: rx }, { description: rx }]; }
   if (genre) f.genres = genre;
   if (year) f.releaseYear = +year;
+  const ordering = sort === 'new' ? { createdAt: -1, _id: -1 }
+    : sort === 'trending' ? { viewCount: -1, createdAt: -1 }
+      : { releaseYear: -1, name: 1 };
   const [items, total] = await Promise.all([
-    Title.find(f).sort({ releaseYear: -1, name: 1 }).skip((page - 1) * limit).limit(limit).select('-streamUrl'),
+    Title.find(f).sort(ordering).skip((page - 1) * limit).limit(limit).select('-streamUrl'),
     Title.countDocuments(f),
   ]);
   res.json({ items, total, page, pages: Math.max(1, Math.ceil(total / limit)) });
@@ -63,6 +66,11 @@ r.get('/titles/:id', wrap(async (req, res) => {
   t ? res.json(t) : res.status(404).json({ error: 'Title not found' });
 }));
 
+r.get('/titles/:id/edit', authed, admin, wrap(async (req, res) => {
+  const title = await Title.findById(req.params.id);
+  title ? res.json(title) : res.status(404).json({ error: 'Title not found' });
+}));
+
 // Access check happens here; only entitled users ever receive a stream URL.
 r.get('/titles/:id/stream', authed, wrap(async (req, res) => {
   const t = await Title.findById(req.params.id);
@@ -70,8 +78,10 @@ r.get('/titles/:id/stream', authed, wrap(async (req, res) => {
   if (RANK[await planOf(req.user.id)] < RANK[t.minPlan])
     return res.status(403).json({ error: `This title needs the ${t.minPlan} plan`, needPlan: t.minPlan });
   if (!t.streamUrl) return res.status(404).json({ error: 'No video is available for this title yet' });
+  const viewedTitle = await Title.findByIdAndUpdate(t.id, { $inc: { viewCount: 1 } }, { new: true });
+  if (!viewedTitle) return res.status(404).json({ error: 'Title not found' });
   const w = await Watch.findOne({ userId: req.user.id, titleId: t.id });
-  res.json({ url: t.streamUrl, resume: w?.progressSeconds || 0 });
+  res.json({ url: viewedTitle.streamUrl, resume: w?.progressSeconds || 0 });
 }));
 
 r.post('/titles', authed, admin, wrap(async (req, res) => res.status(201).json(await Title.create(titleFields(req.body)))));

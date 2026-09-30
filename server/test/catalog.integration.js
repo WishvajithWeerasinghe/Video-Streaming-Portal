@@ -54,16 +54,33 @@ try {
   for (const invalid of [{ name: ' ' }, { name: 'Bad URL', posterUrl: 'javascript:alert(1)' }, { name: 'Bad year', releaseYear: 2024.5 }, { name: 'Bad plan', minPlan: 'other' }]) {
     assert.equal((await request('/titles', 'POST', invalid, token)).status, 400);
   }
-  const created = await request('/titles', 'POST', { name: 'A new movie', genres: ['Adventure'], cast: ['Sample Actor'], releaseYear: 2025, description: 'A new plot', minPlan: 'free' }, token);
+  const created = await request('/titles', 'POST', { name: 'A new movie', genres: ['Adventure'], cast: ['Sample Actor'], releaseYear: 2025, description: 'A new plot', minPlan: 'free', streamUrl: 'https://example.com/movie.m3u8' }, token);
   assert.equal(created.status, 201);
   const id = created.data._id;
+  assert.equal((await request(`/titles/${id}/edit`)).status, 401);
+  assert.equal((await request(`/titles/${id}/edit`, 'GET', undefined, member.data.token)).status, 403);
+  const editable = await request(`/titles/${id}/edit`, 'GET', undefined, token);
+  assert.equal(editable.status, 200);
+  assert.equal(editable.data.streamUrl, 'https://example.com/movie.m3u8');
+  const updated = await request(`/titles/${id}`, 'PUT', { name: 'Updated movie', description: 'Revised plot' }, token);
+  assert.equal(updated.status, 200);
+  assert.equal(updated.data.name, 'Updated movie');
+  assert.equal(updated.data.streamUrl, 'https://example.com/movie.m3u8');
   const results = await request('/titles?q=Sample%20Actor&genre=Adventure');
   assert.equal(results.data.total, 1);
   assert.equal(results.data.items[0]._id, id);
   assert.ok(!('streamUrl' in results.data.items[0]));
   assert.ok((await request('/titles/meta/genres')).data.includes('Adventure'));
-  assert.equal((await request(`/titles/${id}`)).data.name, 'A new movie');
-  assert.equal((await request(`/titles/${id}/stream`, 'GET', undefined, token)).status, 404);
+  assert.equal((await request(`/titles/${id}`)).data.name, 'Updated movie');
+  const stream = await request(`/titles/${id}/stream`, 'GET', undefined, token);
+  assert.equal(stream.status, 200);
+  assert.equal(stream.data.url, 'https://example.com/movie.m3u8');
+  assert.equal((await Title.findById(id)).viewCount, 1);
+  const trending = await request('/titles?sort=trending');
+  assert.equal(trending.data.items[0]._id, id);
+  assert.equal(trending.data.items[0].viewCount, 1);
+  const newest = await request('/titles?sort=new');
+  assert.equal(newest.data.items[0]._id, id);
   assert.equal((await request(`/titles/${id}`, 'PUT', { type: 'invalid' }, token)).status, 400);
   assert.equal((await request(`/titles/${new mongoose.Types.ObjectId()}`, 'PUT', { name: 'Missing' }, token)).status, 404);
   console.log('PASS: seed preserves data and IDs; admin login; access control; validation; save, search, genres and details; missing stream and update handling.');
