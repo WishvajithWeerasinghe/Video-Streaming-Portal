@@ -17,11 +17,39 @@ const PLANS = [
   { id: 'premium', price: '$9 / month', note: 'The full catalog, including new releases' },
 ];
 
-function Browse({ open }) {
+function PosterRow({ items, reverse, open }) {
+  if (!items.length) return null;
+  let row = [...items];
+  while (row.length < 10) row = [...row, ...items];
+  const loop = [...row, ...row];
+  return (
+    <div className="marquee-row">
+      <div className={'marquee-track' + (reverse ? ' reverse' : '')}>
+        {loop.map((t, i) => (
+          <button key={t._id + '-' + i} className="marquee-item" onClick={() => open(t._id)} tabIndex={i < row.length ? 0 : -1} aria-hidden={i >= row.length}>
+            <Poster t={t} />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Browse({ open, go, user }) {
+  const [featured, setFeatured] = useState([]);
+  useEffect(() => {
+    document.body.classList.add('home-page');
+    return () => document.body.classList.remove('home-page');
+  }, []);
+
   const [q, setQ] = useState(''), [genre, setGenre] = useState(''), [page, setPage] = useState(1);
   const [genres, setGenres] = useState([]), [data, setData] = useState({ items: [], pages: 1, total: 0 });
   const [loading, setLoading] = useState(true), [error, setError] = useState(''), [retry, setRetry] = useState(0);
-  useEffect(() => { api('/titles/meta/genres').then(setGenres).catch(() => {}); }, []);
+  useEffect(() => {
+    api('/titles/meta/genres').then(setGenres).catch(() => {});
+    api('/titles').then((r) => setFeatured(r.items)).catch(() => {});
+  }, []);
+  const toLibrary = () => document.getElementById('library')?.scrollIntoView({ behavior: 'smooth' });
   useEffect(() => {
     let active = true;
     setLoading(true); setError('');
@@ -36,7 +64,25 @@ function Browse({ open }) {
   return (
     <>
       <section className="hero">
-        <h1>Find something to watch tonight</h1>
+        <span className="badge">Your all-in-one streaming portal</span>
+        <h1>
+          Every movie &amp; series you want,
+          <br />
+          <span className="grad">streaming in seconds.</span>
+        </h1>
+        <p className="hero-sub">Browse by genre, search by title, actor or plot, and pick up where you left off on any device.</p>
+        <div className="hero-cta">
+          <button className="btn btn-lg" onClick={() => (user ? toLibrary() : go('auth'))}>{user ? 'Start watching' : 'Get started'}</button>
+          <button className="btn-ghost" onClick={toLibrary}>Explore the library</button>
+        </div>
+        {featured.length > 0 && (
+          <div className="marquee">
+            <PosterRow items={featured} open={open} />
+            <PosterRow items={[...featured].reverse()} reverse open={open} />
+          </div>
+        )}
+      </section>
+      <section id="library" className="finder">
         <input className="search" placeholder="Search by title, actor or plot" value={q}
           onChange={(e) => { setQ(e.target.value); setPage(1); }} />
         <div className="chips">
@@ -176,7 +222,7 @@ export default function App() {
         </nav>
       </header>
       <main>
-        {view.name === 'browse' && <Browse open={(id) => go('title', id)} />}
+        {view.name === 'browse' && <Browse open={(id) => go('title', id)} go={go} user={user} />}
         {view.name === 'title' && <Detail id={view.id} token={token} go={go} />}
         {view.name === 'plans' && <Plans token={token} go={go} notify={notify} />}
         {view.name === 'history' && <History token={token} go={go} open={(id) => go('title', id)} />}
