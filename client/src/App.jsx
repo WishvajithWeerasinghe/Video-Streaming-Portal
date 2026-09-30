@@ -5,6 +5,20 @@ import AuthPage from './AuthPage.jsx';
 import AddTitle from './AddTitle.jsx';
 
 const hue = (s) => [...s].reduce((a, c) => a + c.charCodeAt(0), 0) % 360;
+const youtubeVideoId = (value) => {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    let id;
+    if (host === 'youtu.be') id = url.pathname.split('/').filter(Boolean)[0];
+    else if (['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtube-nocookie.com', 'www.youtube-nocookie.com'].includes(host)) {
+      id = url.pathname === '/watch'
+        ? url.searchParams.get('v')
+        : url.pathname.match(/^\/(?:embed|shorts|live|v)\/([^/]+)/)?.[1];
+    }
+    return /^[\w-]{11}$/.test(id || '') ? id : null;
+  } catch { return null; }
+};
 const Poster = ({ t }) => (
   <div className="poster" style={{ background: `linear-gradient(160deg, hsl(${hue(t.name)} 55% 40%), hsl(${(hue(t.name) + 60) % 360} 45% 14%))` }}>
     {t.posterUrl && <img src={t.posterUrl} alt="" />}
@@ -37,14 +51,13 @@ function PosterRow({ items, reverse, open }) {
 
 function Browse({ open, go, user }) {
   const [featured, setFeatured] = useState([]);
+  const [q, setQ] = useState(''), [genre, setGenre] = useState(''), [sort, setSort] = useState('all'), [page, setPage] = useState(1);
+  const [genres, setGenres] = useState([]), [data, setData] = useState({ items: [], pages: 1, total: 0 });
+  const [loading, setLoading] = useState(true), [error, setError] = useState(''), [retry, setRetry] = useState(0);
   useEffect(() => {
     document.body.classList.add('home-page');
     return () => document.body.classList.remove('home-page');
   }, []);
-
-  const [q, setQ] = useState(''), [genre, setGenre] = useState(''), [page, setPage] = useState(1);
-  const [genres, setGenres] = useState([]), [data, setData] = useState({ items: [], pages: 1, total: 0 });
-  const [loading, setLoading] = useState(true), [error, setError] = useState(''), [retry, setRetry] = useState(0);
   useEffect(() => {
     api('/titles/meta/genres').then(setGenres).catch(() => {});
     api('/titles').then((r) => setFeatured(r.items)).catch(() => {});
@@ -57,10 +70,11 @@ function Browse({ open, go, user }) {
       const p = new URLSearchParams({ page });
       if (q) p.set('q', q);
       if (genre) p.set('genre', genre);
+      if (sort !== 'all') p.set('sort', sort);
       api('/titles?' + p).then((result) => { if (active) setData(result); }).catch((e) => { if (active) setError(e.message); }).finally(() => { if (active) setLoading(false); });
     }, 250);
     return () => { active = false; clearTimeout(id); };
-  }, [q, genre, page, retry]);
+  }, [q, genre, sort, page, retry]);
   return (
     <>
       <section className="hero">
@@ -85,6 +99,12 @@ function Browse({ open, go, user }) {
       <section id="library" className="finder">
         <input className="search" placeholder="Search by title, actor or plot" value={q}
           onChange={(e) => { setQ(e.target.value); setPage(1); }} />
+        <div className="chips" role="tablist" aria-label="Sort titles">
+          {[['all', 'All'], ['new', 'New'], ['trending', 'Trending']].map(([value, label]) => (
+            <button key={value} role="tab" aria-selected={sort === value} className={sort === value ? 'chip on' : 'chip'}
+              onClick={() => { setSort(value); setPage(1); }}>{label}</button>
+          ))}
+        </div>
         <div className="chips">
           {['', ...genres].map((g) => (
             <button key={g} className={g === genre ? 'chip on' : 'chip'} onClick={() => { setGenre(g); setPage(1); }}>{g || 'All'}</button>
@@ -97,7 +117,7 @@ function Browse({ open, go, user }) {
             <button key={t._id} className="card" onClick={() => open(t._id)}>
               <Poster t={t} />
               <strong>{t.name}</strong>
-              <small>{t.releaseYear} · {t.genres.join(', ')}{t.minPlan !== 'free' && <em className="tier">{t.minPlan}</em>}</small>
+              <small>{t.releaseYear} · {t.genres.join(', ')}{sort === 'trending' && ` · ${t.viewCount || 0} views`}{t.minPlan !== 'free' && <em className="tier">{t.minPlan}</em>}</small>
             </button>
           ))}
         </div>
@@ -115,17 +135,24 @@ function Browse({ open, go, user }) {
 
 function Player({ url, start, onProgress }) {
   const ref = useRef();
+  const videoId = youtubeVideoId(url);
   useEffect(() => {
+    if (videoId) return;
     const v = ref.current; let hls;
     if (Hls.isSupported() && url.includes('.m3u8')) { hls = new Hls(); hls.loadSource(url); hls.attachMedia(v); } else v.src = url;
     v.onloadedmetadata = () => { if (start) v.currentTime = start; };
     const iv = setInterval(() => { if (!v.paused) onProgress(Math.floor(v.currentTime)); }, 10000);
     return () => { clearInterval(iv); if (v.currentTime > 0) onProgress(Math.floor(v.currentTime)); hls?.destroy(); };
-  }, [url]);
+  }, [url, videoId, start, onProgress]);
+  if (videoId) {
+    const params = new URLSearchParams({ autoplay: '1', controls: '1', rel: '0' });
+    if (start > 0) params.set('start', String(Math.floor(start)));
+    return <iframe title="YouTube video player" src={`https://www.youtube-nocookie.com/embed/${videoId}?${params}`} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen />;
+  }
   return <video ref={ref} controls autoPlay playsInline />;
 }
 
-function Detail({ id, token, go }) {
+function Detail({ id, token, isAdmin, go }) {
   const [t, setT] = useState(), [stream, setStream] = useState(), [err, setErr] = useState('');
   useEffect(() => { setStream(); setErr(''); api('/titles/' + id).then(setT).catch((e) => setErr(e.message)); }, [id]);
   const play = async () => {
@@ -142,7 +169,10 @@ function Detail({ id, token, go }) {
         <p className="meta">{t.releaseYear} · {t.type === 'series' ? 'Series' : 'Movie'} · {t.genres.join(', ')}</p>
         <p>{t.description}</p>
         <p className="meta">Starring {t.cast.join(', ')}</p>
-        {!stream && <button className="btn" onClick={play}>{token ? 'Play' : 'Log in to play'}</button>}
+        <div className="detail-actions">
+          {isAdmin && <button className="btn" onClick={() => go('edit-title', id)}>Edit tile</button>}
+          {!stream && <button className="btn" onClick={play}>{token ? 'Play' : 'Log in to play'}</button>}
+        </div>
         {err && <p className="error">{err} {err.includes('plan') && <a href="#" onClick={(e) => { e.preventDefault(); go('plans'); }}>See plans</a>}</p>}
       </div>
     </div>
@@ -223,10 +253,11 @@ export default function App() {
       </header>
       <main>
         {view.name === 'browse' && <Browse open={(id) => go('title', id)} go={go} user={user} />}
-        {view.name === 'title' && <Detail id={view.id} token={token} go={go} />}
+        {view.name === 'title' && <Detail id={view.id} token={token} isAdmin={user?.role === 'admin'} go={go} />}
         {view.name === 'plans' && <Plans token={token} go={go} notify={notify} />}
         {view.name === 'history' && <History token={token} go={go} open={(id) => go('title', id)} />}
         {view.name === 'add-title' && user?.role === 'admin' && <AddTitle token={token} onSaved={(t) => { go('title', t._id); notify('Title saved to the catalogue'); }} />}
+        {view.name === 'edit-title' && user?.role === 'admin' && <AddTitle token={token} titleId={view.id} onCancel={() => go('title', view.id)} onSaved={(t) => { go('title', t._id); notify('Title updated'); }} />}
         {view.name === 'auth' && <AuthPage onAuth={onAuth} />}
       </main>
       {toast && <div className="toast" role="status">{toast}</div>}
