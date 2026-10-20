@@ -3,6 +3,7 @@ import Hls from 'hls.js';
 import { api } from './api.js';
 import AuthPage from './AuthPage.jsx';
 import AddTitle from './AddTitle.jsx';
+import Playlist from './Playlist.jsx';
 
 const hue = (s) => [...s].reduce((a, c) => a + c.charCodeAt(0), 0) % 360;
 const youtubeVideoId = (value) => {
@@ -49,7 +50,52 @@ function PosterRow({ items, reverse, open }) {
   );
 }
 
-function Browse({ open, go, user }) {
+function PlaylistPicker({ token, playlists, titleId, onSaved, go }) {
+  const [selected, setSelected] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  if (!token) return null;
+  if (playlists.length === 0) return (
+    <div className="playlist-picker-action">
+      <span className="meta">No playlists yet.</span>
+      <button className="link" type="button" onClick={() => go('playlists')}>Create a playlist</button>
+    </div>
+  );
+  const playlist = playlists.find((item) => item._id === selected);
+  const alreadyAdded = playlist?.titleIds.some((title) => (title._id || title) === titleId);
+  const add = async () => {
+    if (!selected) return;
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      const updated = await api(`/playlists/${selected}/titles`, { method: 'POST', body: { titleId }, token });
+      onSaved(updated);
+      setMessage('Added to playlist');
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="playlist-picker-action">
+      <label className="sr-only" htmlFor={`playlist-${titleId}`}>Add to playlist</label>
+      <select id={`playlist-${titleId}`} value={selected} onChange={(event) => { setSelected(event.target.value); setMessage(''); }}>
+        <option value="">Add to playlist…</option>
+        {playlists.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}
+      </select>
+      <button type="button" onClick={add} disabled={!selected || alreadyAdded || busy}>
+        {busy ? 'Adding…' : alreadyAdded ? 'Already added' : 'Add'}
+      </button>
+      {message && <small role="status">{message}</small>}
+      {error && <small className="error" role="alert">{error}</small>}
+    </div>
+  );
+}
+
+function Browse({ open, go, user, token, playlists, onPlaylistSaved }) {
   const [featured, setFeatured] = useState([]);
   const [q, setQ] = useState(''), [genre, setGenre] = useState(''), [sort, setSort] = useState('all'), [page, setPage] = useState(1);
   const [genres, setGenres] = useState([]), [data, setData] = useState({ items: [], pages: 1, total: 0 });
@@ -114,11 +160,14 @@ function Browse({ open, go, user }) {
       {loading ? <p className="empty" role="status">Loading titles…</p> : error ? <div role="alert"><p className="error">Could not load titles: {error}</p><button className="btn" onClick={() => setRetry(retry + 1)}>Try again</button></div> : data.items.length === 0 ? <p className="empty">{q || genre ? 'No titles match. Try a different word or clear the genre filter.' : 'No titles yet. Add a title using an admin account or load the sample catalogue.'}</p> : (
         <div className="grid">
           {data.items.map((t) => (
-            <button key={t._id} className="card" onClick={() => open(t._id)}>
-              <Poster t={t} />
-              <strong>{t.name}</strong>
-              <small>{t.releaseYear} · {t.genres.join(', ')}{sort === 'trending' && ` · ${t.viewCount || 0} views`}{t.minPlan !== 'free' && <em className="tier">{t.minPlan}</em>}</small>
-            </button>
+            <article key={t._id} className="card">
+              <button className="card-open" onClick={() => open(t._id)}>
+                <Poster t={t} />
+                <strong>{t.name}</strong>
+                <small>{t.releaseYear} · {t.genres.join(', ')}{sort === 'trending' && ` · ${t.viewCount || 0} views`}{t.minPlan !== 'free' && <em className="tier">{t.minPlan}</em>}</small>
+              </button>
+              {user && <PlaylistPicker token={token} playlists={playlists} titleId={t._id} onSaved={onPlaylistSaved} go={go} />}
+            </article>
           ))}
         </div>
       )}
@@ -133,7 +182,7 @@ function Browse({ open, go, user }) {
   );
 }
 
-function Player({ url, start, onProgress }) {
+function Player({ url, start, onProgress, onEnded }) {
   const ref = useRef();
   const videoId = youtubeVideoId(url);
   useEffect(() => {
@@ -149,30 +198,52 @@ function Player({ url, start, onProgress }) {
     if (start > 0) params.set('start', String(Math.floor(start)));
     return <iframe title="YouTube video player" src={`https://www.youtube-nocookie.com/embed/${videoId}?${params}`} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen />;
   }
-  return <video ref={ref} controls autoPlay playsInline />;
+  return <video ref={ref} controls autoPlay playsInline onEnded={onEnded} />;
 }
 
-function Detail({ id, token, isAdmin, go }) {
+function Detail({ id, token, isAdmin, go, queue, playlistName, playlists, onPlaylistSaved }) {
   const [t, setT] = useState(), [stream, setStream] = useState(), [err, setErr] = useState('');
   useEffect(() => { setStream(); setErr(''); api('/titles/' + id).then(setT).catch((e) => setErr(e.message)); }, [id]);
+  useEffect(() => {
+    if (!playlistName || !token) return;
+    let active = true;
+    api(`/titles/${id}/stream`, { token })
+      .then((result) => { if (active) { setStream(result); setErr(''); } })
+      .catch((e) => { if (active) setErr(e.message); });
+    return () => { active = false; };
+  }, [id, playlistName, token]);
   const play = async () => {
     if (!token) return go('auth');
     try { setStream(await api(`/titles/${id}/stream`, { token })); setErr(''); } catch (e) { setErr(e.message); }
   };
   const save = (s) => api(`/watch/${id}`, { method: 'PUT', body: { progressSeconds: s }, token }).catch(() => {});
+  const queueIndex = queue?.indexOf(id) ?? -1;
+  const moveInQueue = (offset) => {
+    const nextId = queue[queueIndex + offset];
+    if (nextId) go('title', nextId, { queue, playlistName });
+  };
+  const playNext = () => {
+    if (queueIndex >= 0 && queueIndex < queue.length - 1) moveInQueue(1);
+  };
   if (!t) return <p className="empty">{err || 'Loading…'}</p>;
   return (
     <div className="detail">
-      {stream ? <Player url={stream.url} start={stream.resume} onProgress={save} /> : <Poster t={t} />}
+      {stream ? <Player url={stream.url} start={stream.resume} onProgress={save} onEnded={playNext} /> : <Poster t={t} />}
       <div>
         <h2>{t.name}</h2>
+        {playlistName && <p className="meta">Playing from {playlistName} · {queueIndex + 1} of {queue.length}</p>}
         <p className="meta">{t.releaseYear} · {t.type === 'series' ? 'Series' : 'Movie'} · {t.genres.join(', ')}</p>
         <p>{t.description}</p>
         <p className="meta">Starring {t.cast.join(', ')}</p>
         <div className="detail-actions">
           {isAdmin && <button className="btn" onClick={() => go('edit-title', id)}>Edit tile</button>}
           {!stream && <button className="btn" onClick={play}>{token ? 'Play' : 'Log in to play'}</button>}
+          {queueIndex >= 0 && <>
+            <button className="btn" disabled={queueIndex === 0} onClick={() => moveInQueue(-1)}>Previous</button>
+            <button className="btn" disabled={queueIndex === queue.length - 1} onClick={() => moveInQueue(1)}>Next</button>
+          </>}
         </div>
+        <PlaylistPicker token={token} playlists={playlists} titleId={id} onSaved={onPlaylistSaved} go={go} />
         {err && <p className="error">{err} {err.includes('plan') && <a href="#" onClick={(e) => { e.preventDefault(); go('plans'); }}>See plans</a>}</p>}
       </div>
     </div>
@@ -207,7 +278,7 @@ function Plans({ token, go, notify }) {
   );
 }
 
-function History({ token, open, go }) {
+function History({ token, open, go, playlists, onPlaylistSaved }) {
   const [rows, setRows] = useState([]);
   useEffect(() => { token ? api('/watch', { token }).then(setRows) : go('auth'); }, [token]);
   const fmt = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
@@ -217,9 +288,12 @@ function History({ token, open, go }) {
       {rows.length === 0 ? <p className="empty">Nothing here yet. Start a title and it will appear here.</p> : (
         <div className="grid">
           {rows.filter((r) => r.titleId).map((r) => (
-            <button key={r._id} className="card" onClick={() => open(r.titleId._id)}>
-              <Poster t={r.titleId} /><strong>{r.titleId.name}</strong><small>Stopped at {fmt(r.progressSeconds)}</small>
-            </button>
+            <article key={r._id} className="card">
+              <button className="card-open" onClick={() => open(r.titleId._id)}>
+                <Poster t={r.titleId} /><strong>{r.titleId.name}</strong><small>Stopped at {fmt(r.progressSeconds)}</small>
+              </button>
+              <PlaylistPicker token={token} playlists={playlists} titleId={r.titleId._id} onSaved={onPlaylistSaved} go={go} />
+            </article>
           ))}
         </div>
       )}
@@ -232,8 +306,18 @@ export default function App() {
   const [user, setUser] = useState(JSON.parse(localStorage.user || 'null'));
   const [view, setView] = useState({ name: 'browse' });
   const [toast, setToast] = useState('');
-  const go = (name, id) => setView({ name, id });
+  const [playlists, setPlaylists] = useState([]);
+  const go = (name, id, extra = {}) => setView({ name, id, ...extra });
   const notify = (m) => { setToast(m); setTimeout(() => setToast(''), 2500); };
+  useEffect(() => {
+    if (!token) { setPlaylists([]); return undefined; }
+    let active = true;
+    api('/playlists', { token })
+      .then((result) => { if (active) setPlaylists(result); })
+      .catch((e) => { if (active) notify(e.message); });
+    return () => { active = false; };
+  }, [token]);
+  const updatePlaylist = (updated) => setPlaylists((current) => current.map((item) => item._id === updated._id ? updated : item));
   const onAuth = (d) => {
     setToken(d.token); setUser(d.user); localStorage.token = d.token; localStorage.user = JSON.stringify(d.user);
     go('browse'); notify('Logged in as ' + d.user.email);
@@ -246,16 +330,21 @@ export default function App() {
         <nav>
           <button onClick={() => go('browse')}>Browse</button>
           <button onClick={() => go('history')}>Continue watching</button>
+          <button onClick={() => go(token ? 'playlists' : 'auth')}>Playlists</button>
           <button onClick={() => go('plans')}>Plans</button>
           {user?.role === 'admin' && <button onClick={() => go('add-title')}>Add title</button>}
           {user ? <button onClick={logout}>Log out ({user.email})</button> : <button className="btn sm" onClick={() => go('auth')}>Log in</button>}
         </nav>
       </header>
       <main>
-        {view.name === 'browse' && <Browse open={(id) => go('title', id)} go={go} user={user} />}
-        {view.name === 'title' && <Detail id={view.id} token={token} isAdmin={user?.role === 'admin'} go={go} />}
+        {view.name === 'browse' && <Browse open={(id) => go('title', id)} go={go} user={user} token={token} playlists={playlists} onPlaylistSaved={updatePlaylist} />}
+        {view.name === 'title' && <Detail key={view.id} id={view.id} token={token} isAdmin={user?.role === 'admin'} go={go} queue={view.queue} playlistName={view.playlistName} playlists={playlists} onPlaylistSaved={updatePlaylist} />}
         {view.name === 'plans' && <Plans token={token} go={go} notify={notify} />}
-        {view.name === 'history' && <History token={token} go={go} open={(id) => go('title', id)} />}
+        {view.name === 'history' && <History token={token} go={go} open={(id) => go('title', id)} playlists={playlists} onPlaylistSaved={updatePlaylist} />}
+        {view.name === 'playlists' && token && <Playlist token={token} notify={notify} onPlay={(playlist) => {
+          const queue = playlist.titleIds.map((title) => title._id);
+          go('title', queue[0], { queue, playlistName: playlist.name });
+        }} onCreated={(created) => setPlaylists((current) => [created, ...current])} />}
         {view.name === 'add-title' && user?.role === 'admin' && <AddTitle token={token} onSaved={(t) => { go('title', t._id); notify('Title saved to the catalogue'); }} />}
         {view.name === 'edit-title' && user?.role === 'admin' && <AddTitle token={token} titleId={view.id} onCancel={() => go('title', view.id)} onSaved={(t) => { go('title', t._id); notify('Title updated'); }} />}
         {view.name === 'auth' && <AuthPage onAuth={onAuth} />}
@@ -264,4 +353,3 @@ export default function App() {
     </>
   );
 }
-

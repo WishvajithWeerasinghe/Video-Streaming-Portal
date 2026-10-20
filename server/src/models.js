@@ -46,3 +46,11 @@ const watchSchema = new Schema({
 watchSchema.index({ userId: 1, titleId: 1 }, { unique: true });
 export const Watch = model('Watch', watchSchema);
 
+const playlistSchema = new Schema({
+  userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  name: { type: String, required: true, trim: true, maxlength: 100 },
+  description: { type: String, trim: true, maxlength: 500, default: '' },
+  titleIds: [{ type: Schema.Types.ObjectId, ref: 'Title' }],
+}, { timestamps: true });
+playlistSchema.index({ userId: 1, createdAt: -1 });
+export const Playlist = model('Playlist', playlistSchema);

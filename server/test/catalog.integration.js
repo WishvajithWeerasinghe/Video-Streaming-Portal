@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import mongoose from 'mongoose';
 import express from 'express';
 import routes from '../src/routes.js';
-import { Title, User } from '../src/models.js';
+import { Title, User, Playlist } from '../src/models.js';
 
 // Always use a new local test database, never the configured application database.
 const uri = `mongodb://127.0.0.1:27017/video_portal_test_${randomUUID().replaceAll('-', '')}`;
@@ -51,12 +51,39 @@ try {
   assert.equal((await request('/titles', 'POST', { name: 'Unauthorised' })).status, 401);
   const member = await request('/auth/register', 'POST', { email: 'member@example.com', password });
   assert.equal((await request('/titles', 'POST', { name: 'Forbidden' }, member.data.token)).status, 403);
+  assert.equal((await request('/playlists')).status, 401);
   for (const invalid of [{ name: ' ' }, { name: 'Bad URL', posterUrl: 'javascript:alert(1)' }, { name: 'Bad year', releaseYear: 2024.5 }, { name: 'Bad plan', minPlan: 'other' }]) {
     assert.equal((await request('/titles', 'POST', invalid, token)).status, 400);
   }
   const created = await request('/titles', 'POST', { name: 'A new movie', genres: ['Adventure'], cast: ['Sample Actor'], releaseYear: 2025, description: 'A new plot', minPlan: 'free', streamUrl: 'https://example.com/movie.m3u8' }, token);
   assert.equal(created.status, 201);
   const id = created.data._id;
+  assert.equal((await request('/playlists', 'POST', { name: 'Watch later' }, member.data.token)).status, 201);
+  const playlist = await request('/playlists', 'POST', {
+    name: '  Weekend picks  ',
+    description: '  Movies for the weekend  ',
+    titleIds: [id, id],
+  }, member.data.token);
+  assert.equal(playlist.status, 201);
+  assert.equal(playlist.data.name, 'Weekend picks');
+  assert.equal(playlist.data.description, 'Movies for the weekend');
+  assert.equal(playlist.data.titleIds.length, 1);
+  assert.equal(playlist.data.titleIds[0]._id, id);
+  assert.ok(!('streamUrl' in playlist.data.titleIds[0]));
+  const watchLater = (await request('/playlists', 'GET', undefined, member.data.token)).data[1];
+  const addedToPlaylist = await request(`/playlists/${watchLater._id}/titles`, 'POST', { titleId: id }, member.data.token);
+  assert.equal(addedToPlaylist.status, 200);
+  assert.equal(addedToPlaylist.data.titleIds[0]._id, id);
+  assert.equal((await request(`/playlists/${watchLater._id}/titles`, 'POST', { titleId: id }, member.data.token)).data.titleIds.length, 1);
+  assert.equal((await request(`/playlists/${watchLater._id}/titles`, 'POST', { titleId: 'invalid' }, member.data.token)).status, 400);
+  assert.equal((await request(`/playlists/${watchLater._id}/titles`, 'POST', { titleId: id }, token)).status, 404);
+  assert.equal((await request('/playlists', 'POST', { name: 'Bad title', titleIds: ['invalid'] }, member.data.token)).status, 400);
+  assert.equal((await request('/playlists', 'POST', { name: 'Missing title', titleIds: [new mongoose.Types.ObjectId()] }, member.data.token)).status, 400);
+  assert.equal((await request('/playlists', 'POST', { name: ' ' }, member.data.token)).status, 400);
+  assert.equal((await request('/playlists', 'POST', undefined, member.data.token)).status, 400);
+  assert.equal((await request('/playlists', 'GET', undefined, member.data.token)).data.length, 2);
+  assert.equal((await request('/playlists', 'GET', undefined, token)).data.length, 0);
+  assert.equal(await Playlist.countDocuments(), 2);
   assert.equal((await request(`/titles/${id}/edit`)).status, 401);
   assert.equal((await request(`/titles/${id}/edit`, 'GET', undefined, member.data.token)).status, 403);
   const editable = await request(`/titles/${id}/edit`, 'GET', undefined, token);

@@ -1,7 +1,8 @@
 import { Router } from 'express';
+import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { User, Title, Subscription, Watch } from './models.js';
+import { User, Title, Subscription, Watch, Playlist } from './models.js';
 
 const SECRET = process.env.JWT_SECRET || 'dev-secret';
 const RANK = { free: 0, basic: 1, premium: 2 };
@@ -22,6 +23,7 @@ const titleFields = (body) => Object.fromEntries(
   ['name', 'type', 'genres', 'cast', 'description', 'releaseYear', 'posterUrl', 'streamUrl', 'minPlan']
     .filter((key) => Object.hasOwn(body, key)).map((key) => [key, body[key]]),
 );
+const playlistTitles = 'name releaseYear genres posterUrl';
 const r = Router();
 
 // ---- auth ----
@@ -105,6 +107,39 @@ r.delete('/subscription', authed, wrap(async (req, res) => {
   res.json({ plan: 'free' });
 }));
 
+// ---- playlists ----
+r.get('/playlists', authed, wrap(async (req, res) =>
+  res.json(await Playlist.find({ userId: req.user.id }).sort({ createdAt: -1 }).populate('titleIds', playlistTitles))));
+r.post('/playlists', authed, wrap(async (req, res) => {
+  const { name, description = '', titleIds = [] } = req.body || {};
+  if (typeof name !== 'string' || !name.trim()) return res.status(400).json({ error: 'Enter a playlist name' });
+  if (typeof description !== 'string') return res.status(400).json({ error: 'Description must be text' });
+  if (!Array.isArray(titleIds) || titleIds.some((id) => !mongoose.isValidObjectId(id)))
+    return res.status(400).json({ error: 'Choose valid titles for the playlist' });
+  const uniqueTitleIds = [...new Set(titleIds.map(String))];
+  if (uniqueTitleIds.length && await Title.countDocuments({ _id: { $in: uniqueTitleIds } }) !== uniqueTitleIds.length)
+    return res.status(400).json({ error: 'One or more selected titles could not be found' });
+  const playlist = await Playlist.create({
+    userId: req.user.id,
+    name: name.trim(),
+    description: description.trim(),
+    titleIds: uniqueTitleIds,
+  });
+  await playlist.populate('titleIds', playlistTitles);
+  res.status(201).json(playlist);
+}));
+r.post('/playlists/:id/titles', authed, wrap(async (req, res) => {
+  const { titleId } = req.body || {};
+  if (!mongoose.isValidObjectId(titleId)) return res.status(400).json({ error: 'Choose a valid title' });
+  if (!await Title.exists({ _id: titleId })) return res.status(404).json({ error: 'Title not found' });
+  const playlist = await Playlist.findOneAndUpdate(
+    { _id: req.params.id, userId: req.user.id },
+    { $addToSet: { titleIds: titleId } },
+    { new: true },
+  ).populate('titleIds', playlistTitles);
+  playlist ? res.json(playlist) : res.status(404).json({ error: 'Playlist not found' });
+}));
+
 // ---- watch history ----
 r.get('/watch', authed, wrap(async (req, res) =>
   res.json(await Watch.find({ userId: req.user.id }).sort({ updatedAt: -1 }).limit(30).populate('titleId', '-streamUrl'))));
@@ -115,4 +150,3 @@ r.put('/watch/:titleId', authed, wrap(async (req, res) => {
 }));
 
 export default r;
-
