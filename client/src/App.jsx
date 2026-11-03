@@ -4,6 +4,8 @@ import { api } from './api.js';
 import AuthPage from './AuthPage.jsx';
 import AddTitle from './AddTitle.jsx';
 import Playlist from './Playlist.jsx';
+import reelhouseLogo from '../reelhouse.png';
+import reelhouseWordmark from '../reelline.png';
 
 const hue = (s) => [...s].reduce((a, c) => a + c.charCodeAt(0), 0) % 360;
 const youtubeVideoId = (value) => {
@@ -326,7 +328,10 @@ export default function App() {
   return (
     <>
       <header>
-        <button className="logo" onClick={() => go('browse')}>Reelhouse</button>
+        <button className="logo" onClick={() => go('browse')} aria-label="Reelhouse" title="Reelhouse">
+          <img className="logo-icon" src={reelhouseLogo} alt="" />
+          <img className="logo-wordmark" src={reelhouseWordmark} alt="" />
+        </button>
         <nav>
           <button onClick={() => go('browse')}>Browse</button>
           <button onClick={() => go('history')}>Continue watching</button>

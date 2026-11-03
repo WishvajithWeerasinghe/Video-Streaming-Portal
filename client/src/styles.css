@@ -5,7 +5,9 @@ h1,h2,h3,.logo { font-family:inherit; letter-spacing:-.02em; }
 button { font:inherit; color:inherit; cursor:pointer; background:none; border:0; }
 :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; padding:16px clamp(16px,4vw,48px); border-bottom:1px solid var(--line); }
-.logo { font-size:1.6rem; font-weight:800; color:var(--accent); }
+.logo { display:inline-flex; align-items:center; gap:0; padding:0; color:var(--accent); line-height:0; }
+.logo-icon { display:block; width:40px; height:40px; object-fit:contain; }
+.logo-wordmark { display:block; width:450px; max-height:80px; margin-left:-100px; object-fit:contain; }
 nav { display:flex; flex-wrap:wrap; gap:6px 18px; align-items:center; }
 nav button { color:var(--muted); } nav button:hover { color:var(--text); }
 main { max-width:1180px; margin:0 auto; padding:32px clamp(16px,4vw,48px) 64px; }
