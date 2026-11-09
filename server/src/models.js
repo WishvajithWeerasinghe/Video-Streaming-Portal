@@ -22,9 +22,12 @@ const titleSchema = new Schema({
   posterUrl: { type: String, trim: true, validate: { validator: validUrl, message: 'Poster URL must use http or https' } },
   streamUrl: { type: String, trim: true, validate: { validator: validUrl, message: 'Stream URL must use http or https' } }, // later: S3 path -> signed CloudFront URL
   minPlan: { type: String, enum: ['free', 'basic', 'premium'], default: 'free' },
+  viewCount: { type: Number, default: 0, min: 0 },
 }, { timestamps: true });
 titleSchema.index({ genres: 1 });
 titleSchema.index({ name: 1 });
+titleSchema.index({ viewCount: -1, createdAt: -1 });
+titleSchema.index({ createdAt: -1 });
 export const Title = model('Title', titleSchema);
 
 export const Subscription = model('Subscription', new Schema({
@@ -43,3 +46,11 @@ const watchSchema = new Schema({
 watchSchema.index({ userId: 1, titleId: 1 }, { unique: true });
 export const Watch = model('Watch', watchSchema);
 
+const playlistSchema = new Schema({
+  userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  name: { type: String, required: true, trim: true, maxlength: 100 },
+  description: { type: String, trim: true, maxlength: 500, default: '' },
+  titleIds: [{ type: Schema.Types.ObjectId, ref: 'Title' }],
+}, { timestamps: true });
+playlistSchema.index({ userId: 1, createdAt: -1 });
+export const Playlist = model('Playlist', playlistSchema);
