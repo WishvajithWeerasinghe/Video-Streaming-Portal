@@ -2,6 +2,10 @@ services:
   mongo:
     image: mongo:8.0
     restart: unless-stopped
+    environment:
+      # Work around the MongoDB/Tcmalloc rseq incompatibility on affected host kernels.
+      # This disables Tcmalloc's per-CPU cache and may slightly reduce performance.
+      GLIBC_TUNABLES: "glibc.pthread.rseq=1"
     volumes:
       - mongo-data:/data/db
     healthcheck:
