@@ -105,4 +105,24 @@ Docker Compose starts the React site, Express API, and MongoDB database:
 
 The database is stored in the `mongo-data` volume and is retained when the containers stop. Stop the app with `docker compose down`. To remove the database too, run `docker compose down --volumes`.
 
+### Move the database to another computer
+
+The seed utility can export and import every application collection while keeping document IDs, relationships, and timestamps. This includes user password hashes, so keep the exported file private. The import merges by document ID: matching records are updated, and records that are only on the destination are left in place. For a clean copy, import into a fresh database.
+
+On the computer that has the data, with the app running:
+
+```sh
+docker compose exec api node src/seed.js --export /tmp/video-portal-seed.json
+docker compose cp api:/tmp/video-portal-seed.json ./server/seed-data.json
+```
+
+Copy `server/seed-data.json` to the other computer. Start the app there, then import it:
+
+```sh
+docker compose cp ./server/seed-data.json api:/tmp/video-portal-seed.json
+docker compose exec api node src/seed.js --import /tmp/video-portal-seed.json
+```
+
+The default snapshot path is `server/seed-data.json` when running the script from the `server` folder. The file is ignored by Git so database records and password hashes are not committed accidentally. `npm run seed` still loads the sample catalogue; `npm run db:export` and `npm run db:import` handle snapshots.
+
 The frontend and API images are built from `client/Dockerfile` and `server/Dockerfile`. GitHub Actions builds both images for every push and pull request, but does not publish them to a container registry.

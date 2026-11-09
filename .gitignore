@@ -1,5 +1,6 @@
 node_modules
 .env
+server/seed-data.json
 dist
 client/public/videos/
 client/public/posters/
