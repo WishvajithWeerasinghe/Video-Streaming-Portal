@@ -1,0 +1,39 @@
+services:
+  mongo:
+    image: mongo:8.0
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  api:
+    build:
+      context: ./server
+    restart: unless-stopped
+    environment:
+      PORT: 4000
+      MONGO_URI: mongodb://mongo:27017/video_portal
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+    depends_on:
+      mongo:
+        condition: service_healthy
+    expose:
+      - "4000"
+
+  client:
+    build:
+      context: ./client
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  mongo-data:
