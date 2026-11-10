@@ -88,3 +88,21 @@ Video playback uses a separate API endpoint. It checks the user's login and plan
 | `watches` | User reference, title reference, progress in seconds, timestamps | Watch history and playback positions |
 
 Titles have indexes on name and genre. Watch records have a unique index on the user and title together, so each user has one progress record per title.
+
+## Run with Docker
+
+Docker Compose starts the React site, Express API, and MongoDB database:
+
+1. Install Docker Desktop (or Docker Engine with the Compose plugin).
+2. Copy `.env.example` to `.env` and set `JWT_SECRET` to a long random value.
+3. From the repository root, run:
+
+   ```sh
+   docker compose up --build
+   ```
+
+4. Open <http://localhost:8080>.
+
+The database is stored in the `mongo-data` volume and is retained when the containers stop. Stop the app with `docker compose down`. To remove the database too, run `docker compose down --volumes`.
+
+The frontend and API images are built from `client/Dockerfile` and `server/Dockerfile`. GitHub Actions builds both images for every push and pull request, but does not publish them to a container registry.
