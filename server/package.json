@@ -6,6 +6,8 @@
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "seed": "node src/seed.js",
+    "db:export": "node src/seed.js --export",
+    "db:import": "node src/seed.js --import",
     "test": "node test/catalog.integration.js"
   },
   "dependencies": {
